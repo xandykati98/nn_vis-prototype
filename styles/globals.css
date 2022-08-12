@@ -14,3 +14,13 @@ a {
 * {
   box-sizing: border-box;
 }
+.path {
+  stroke-dasharray: 10;
+  animation: dash 20s linear infinite reverse;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: 1000;
+  }
+}

@@ -2,7 +2,7 @@ import type { NextPage } from 'next'
 import Head from 'next/head'
 import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
-import { LayerConfig, links_ws, NeuralNetwork, scale6, scaleBetween, setLinks } from '../nn_organized'
+import { LayerConfig, links_ws, NeuralNetwork, scale6, scaleBetween, setLinks, sigmoidRandom } from '../nn_organized'
 import styles from '../styles/Home.module.css'
 import rede from '../rede.json'
 
@@ -25,12 +25,11 @@ const LayerComp = ({ neuron_ids, config, index, useful_ws, rede }:LayerCompProps
     <div>
       {neuron_ids.map(neuron_id => {
         const ws = useful_ws.find(w => w.neuron_id === neuron_id)?.weights
-        console.log(ws, neuron_id, useful_ws)
         return <div key={neuron_id}>
           <h4>{neuron_id}</h4>
           {
             ws ? 
-            <NeuronVisualizer id={neuron_id} ws={ws.map(w => rede.links_ws[w])}/>
+            <NeuronVisualizer id={neuron_id} ws={ws.map(w => links_ws[w])}/>
             : null
           }
         </div>
@@ -40,17 +39,67 @@ const LayerComp = ({ neuron_ids, config, index, useful_ws, rede }:LayerCompProps
 }
 
 const boundary_size = 50;
-const grid_min = -3;
-const grid_max = 3;
+const grid_min = -1;
+const grid_max = 1;
 let boundaries:{
   [key:number]: number[][]
 } = {}
 
+
+
+
+
+
 const nn = new NeuralNetwork()
-for (const config of rede.layer_configs) {
-  nn.pushLayer(config as LayerConfig)
+
+nn.pushLayer({
+  is_input: true,
+  neurons_number: 2,
+})
+nn.pushLayer({
+  neurons_number:4,
+  inline_bias: true,
+  activation_function: 'tanh'
+})
+nn.pushLayer({
+  neurons_number:3,
+  inline_bias: true,
+  activation_function: 'tanh'
+})
+nn.pushLayer({
+  neurons_number:3,
+  inline_bias: true,
+  activation_function: 'tanh'
+})
+nn.pushLayer({
+  neurons_number:1,
+  is_output: true,
+})
+
+rede.neuron_ids = nn.layers.map(l => l.neurons.map(n => n.id))
+// @ts-ignore
+rede.layer_configs = nn.layers.map(l => l.config)
+
+nn.createWeights()
+
+
+// Criação do conjunto de treinamento
+let t_set:any[] = []
+while (t_set.length < 400) {
+    const input = [sigmoidRandom(-10, 10), sigmoidRandom(-10, 10)];
+    t_set.push({
+        inputs: input,
+        desired_outputs: [(Math.floor(input[0]) ^ Math.floor(input[1])) ? 1 : 0]
+    })
 }
 
+const train_config = {
+  epochs: 215,
+  momentum: 0.01,
+  iteracoes: 1000,
+  taxa_aprendizado: 0.04,
+  training_set: t_set
+}
 
 for (const layer_neurons of rede.neuron_ids) {
   for (const neuron_id of layer_neurons) {
@@ -61,38 +110,45 @@ for (const layer_neurons of rede.neuron_ids) {
     }
   }
 }
+const update_bondaries = () => {
+  // loop through the boundary_size x boundary_size grid
+  for (let i = 0; i < boundary_size; i++) {
+    for (let j = 0; j < boundary_size; j++) {
+      const x = scaleBetween(i, grid_min, grid_max, 0, boundary_size)
+      const y = -1 * scaleBetween(j, grid_min, grid_max, 0, boundary_size)
+      const { layer_neuron_outputs, output_response } = nn.guess([
+        x,
+        y,
+        // x*y,
+        // x**2, 
+        // y**2, 
+        // Math.sin(x),
+        // Math.sin(y)
+      ])
 
-const Home: NextPage = () => {
-
-  useEffect(() => {
-    setLinks(rede.links_ws)
-    // @ts-ignore
-    window.nn = nn
-    // loop through the boundary_size x boundary_size grid
-    for (let i = 0; i < boundary_size; i++) {
-      for (let j = 0; j < boundary_size; j++) {
-        const x = scaleBetween(i, grid_min, grid_max, 0, boundary_size)
-        const y = -1 * scaleBetween(j, grid_min, grid_max, 0, boundary_size)
-        const { layer_neuron_outputs, output_response } = nn.guess([
-          x,
-          y,
-          x*y,
-          x**2, 
-          y**2, 
-          Math.sin(x),
-          Math.sin(y)
-        ])
-
-        for (const neuron_outputs of layer_neuron_outputs) {
-          for (const neuron_output of neuron_outputs) {
-            boundaries[Number(neuron_output.origin.id)][i][j] = neuron_output.value;
-          }
-        }
-        for (const neuron_output of output_response) {
+      for (const neuron_outputs of layer_neuron_outputs) {
+        for (const neuron_output of neuron_outputs) {
           boundaries[Number(neuron_output.origin.id)][i][j] = neuron_output.value;
         }
       }
+      for (const neuron_output of output_response) {
+        boundaries[Number(neuron_output.origin.id)][i][j] = neuron_output.value;
+      }
     }
+  }
+}
+const Home: NextPage = () => {
+  
+  useEffect(() => {
+    // @ts-ignore
+    window.nn = nn
+    update_bondaries()
+    nn.train({
+      ...train_config,
+      on_epoch_end: async (epoch, error) => {
+        update_bondaries()
+      }
+    });
   }, [])
 
   return (
@@ -121,7 +177,7 @@ const Home: NextPage = () => {
                index={index}
                useful_ws={neuron_ids.map(id => ({
                   neuron_id: id,
-                  weights: Object.keys(rede.links_ws).filter(key => key.endsWith(`_to_${id}`))
+                  weights: Object.keys(links_ws).filter(key => key.endsWith(`_to_${id}`))
                })).filter(({weights}) => weights.length > 0)}
                config={rede.layer_configs[index]} 
                rede={rede}
@@ -145,8 +201,9 @@ type NeuronVisualizerProps = {
 const NeuronVisualizer = (props:NeuronVisualizerProps) => {
   
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const draw = (ctx:CanvasRenderingContext2D, frameCount: number) => {
+  const draw = (ctx:CanvasRenderingContext2D, frameCount: number, canvas:HTMLCanvasElement) => {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+    const rect = canvas!.getBoundingClientRect()
     // make a 10*10 squares in as a grid for the canvas
     const grid_size = boundary_size
     const grid_width = ctx.canvas.width / grid_size
@@ -158,6 +215,15 @@ const NeuronVisualizer = (props:NeuronVisualizerProps) => {
         ctx.fillStyle = `rgba(0,0,0,${boundaries[props.id][i][j].toFixed(5)})`
         ctx.fillRect(x, y, grid_width, grid_height)
       }
+    }
+    for (const { inputs, desired_outputs } of t_set) {
+      
+      const [ x, y ] = inputs
+      const [ desired ] = desired_outputs
+      const x_scaled = scaleBetween(x, 0, ctx.canvas.width, -1, 1)
+      const y_scaled = (-1 * scaleBetween(y, 0, ctx.canvas.height, -1, 1)) + ctx.canvas.height 
+      ctx.fillStyle = desired === 1 ? `rgba(100,0,0,1)` : `rgba(0,100,0,1)`
+      ctx.fillRect(x_scaled-2.5, y_scaled-2.5, 5, 5)
     }
   }
   useEffect(() => {
@@ -184,7 +250,7 @@ const NeuronVisualizer = (props:NeuronVisualizerProps) => {
     //Our draw came here
     const render = () => {
       frameCount++
-      draw(context, frameCount)
+      draw(context, frameCount, canvas as HTMLCanvasElement)
       animationFrameId = window.requestAnimationFrame(render)
     }
     render()
@@ -194,5 +260,5 @@ const NeuronVisualizer = (props:NeuronVisualizerProps) => {
     }
   }, [draw])
 
-  return <canvas ref={canvasRef} width={200} height={200}/>
+  return <canvas ref={canvasRef} width={160} height={160}/>
 }

@@ -27,7 +27,17 @@
   align-items: center;
   flex-grow: 1;
 }
-
+.layerContain {
+  display: flex;
+  overflow-x: auto;
+  border-radius:8;
+  min-height: 70vh; 
+  background: #fafafa;
+  min-width: 100%;
+}
+.layer {
+  flex-shrink: 0;
+}
 .title a {
   color: #0070f3;
   text-decoration: none;
