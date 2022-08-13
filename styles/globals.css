@@ -19,6 +19,10 @@ a {
   animation: dash 20s linear infinite reverse;
 }
 
+.path.reverse {
+  animation: dash 20s linear infinite;
+}
+
 @keyframes dash {
   to {
     stroke-dashoffset: 1000;

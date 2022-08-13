@@ -56,7 +56,7 @@ const renderWs = (index:number, neuron_ids: number[], useful_ws: {
                 const [from, to] = weights.split('_to_')
                 const link = links_ws[weights]
                 return [
-                  <line className="path" x1={0} y1={w_index * 220} x2={160} y2={index *220} stroke={`rgba(0,0,${from === to ? 255 : 0 },${scaleBetween(link, 0.1, 1, max_min[0], max_min[1])})`} strokeWidth={4} />,
+                  <line className={"path "+(link<0?'reverse':'')} x1={0} y1={w_index * 220} x2={160} y2={index *220} stroke={`rgba(0,0,${from === to ? 255 : 0 },${scaleBetween(link, 0.1, 1, max_min[0], max_min[1])})`} strokeWidth={4} />,
                   <line onClick={() => alert(weights)} x1={0} y1={w_index * 220} x2={160} y2={index *220} stroke={`rgba(0,0,${from === to ? 255 : 0 },0.2)`} strokeWidth={4} />,
                   from === to && <text x={0} y={w_index * 220}>Bias!</text>,
                 ].filter(_=>_)
@@ -68,6 +68,8 @@ const renderWs = (index:number, neuron_ids: number[], useful_ws: {
     </g>
   </svg>
 }
+
+
 
 const LayerComp = ({ neuron_ids, config, index, useful_ws, showXY }:LayerCompProps) => {
 
@@ -94,7 +96,7 @@ const LayerComp = ({ neuron_ids, config, index, useful_ws, showXY }:LayerCompPro
   </div>
 }
 
-const boundary_size = 40;
+const boundary_size = 20;
 const grid_min = -1;
 const grid_max = 1;
 let boundaries:{
@@ -110,21 +112,22 @@ const nn = new NeuralNetwork()
 
 nn.pushLayer({
   is_input: true,
-  neurons_number: 2
+  bias: true,
+  neurons_number: 2+5
 })
 nn.pushLayer({
-  neurons_number:2,
-  //inline_bias: true,
-  activation_function: 'tanh'
-})
-nn.pushLayer({
-  neurons_number:3,
+  neurons_number:8,
   inline_bias: true,
   activation_function: 'tanh'
 })
 nn.pushLayer({
-  neurons_number:3,
-  //inline_bias: true,
+  neurons_number:8,
+  inline_bias: true,
+  activation_function: 'tanh'
+})
+nn.pushLayer({
+  neurons_number:8,
+  inline_bias: true,
   activation_function: 'tanh'
 })
 nn.pushLayer({
@@ -139,19 +142,51 @@ rede.layer_configs = nn.layers.map(l => l.config)
 nn.createWeights()
 
 
+function randUniform(a: number, b: number) {
+  return Math.random() * (b - a) + a;
+}
+
+function genSpiral(deltaT: number, label: number, {noise = 0, n = 100}:{noise?: number, n?: number} = {}) {
+  let points: {x:number,y:number,label:number}[] = [];
+  for (let i = 0; i < n; i++) {
+      let r = i / n * 1;
+      let t = 1.75 * i / n * 2 * Math.PI + deltaT;
+      let x = r * Math.sin(t) + randUniform(-1, 1) * noise;
+      let y = r * Math.cos(t) + randUniform(-1, 1) * noise;
+      points.push({x, y, label});
+  }
+  return points
+}
+const po = genSpiral(0, 1); // Positive examples.
+const ne = genSpiral(Math.PI, -1); // Negative examples.
+
 // Criação do conjunto de treinamento
 let t_set:any[] = []
-while (t_set.length < 400) {
-    const input = [sigmoidRandom(-10, 10), sigmoidRandom(0, 10)];
-    const x = input[0];
-    const y = input[1];
-    
-    const line = x**2;
-    t_set.push({
-        inputs: input,
-        desired_outputs: [((line) < y) ? 1 : 0]
-    })
+
+for (const { x, y, label} of [...po, ...ne]) {
+  t_set.push({
+    inputs: [x, y,
+      x*y,
+      x**2, 
+      y**2, 
+      Math.sin(x),
+      Math.sin(y)],
+    desired_outputs: [label]
+  })
 }
+
+//while (t_set.length < 400) {
+    // const input = [sigmoidRandom(-10, 10), sigmoidRandom(0, 10)];
+    // const x = input[0];
+    // const y = input[1];
+    // 
+    // const line = x**2;
+    // t_set.push({
+    //     inputs: input,
+    //     desired_outputs: [((line) < y) ? 1 : 0]
+    // })
+    
+//}
 
 const train_config = {
   epochs: 215,
@@ -179,11 +214,11 @@ const update_bondaries = () => {
       const { layer_neuron_outputs, output_response } = nn.guess([
         x,
         y,
-        // x*y,
-        // x**2, 
-        // y**2, 
-        // Math.sin(x),
-        // Math.sin(y)
+         x*y,
+         x**2, 
+         y**2, 
+         Math.sin(x),
+         Math.sin(y)
       ])
 
       for (const neuron_outputs of layer_neuron_outputs) {
@@ -279,8 +314,8 @@ const NeuronVisualizer = (props:NeuronVisualizerProps) => {
         const y = j * grid_height
         const x_in = scaleBetween(i, grid_min, grid_max, 0, boundary_size)
         const y_in = -1 * scaleBetween(j, grid_min, grid_max, 0, boundary_size)
-        
-        ctx.fillStyle = `rgba(0,0,0,${boundaries[props.id][i][j].toFixed(5)})`
+        const opacity = scaleBetween(boundaries[props.id][i][j], 0, 1, -1, 1).toFixed(5)
+        ctx.fillStyle = `rgba(0,0,0,${opacity})`
         ctx.fillRect(x, y, grid_width, grid_height)
       }
     }
